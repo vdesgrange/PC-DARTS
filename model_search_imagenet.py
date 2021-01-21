@@ -10,9 +10,9 @@ def channel_shuffle(x, groups):
     batchsize, num_channels, height, width = x.data.size()
 
     channels_per_group = num_channels // groups
-    
+
     # reshape
-    x = x.view(batchsize, groups, 
+    x = x.view(batchsize, groups,
         channels_per_group, height, width)
 
     x = torch.transpose(x, 1, 2).contiguous()
@@ -37,13 +37,13 @@ class MixedOp(nn.Module):
       self._ops.append(op)
 
   def forward(self, x, weights):
-    
+
     dim_2 = x.shape[1]
     xtemp = x[ : , :  dim_2//2, :, :]
     xtemp2 = x[ : ,  dim_2//2:, :, :]
     xtemp3 = x[:,dim_2// 4:dim_2// 2, :, :]
     xtemp4 = x[:,dim_2// 2:, :, :]
-    
+
     temp1 = sum(w.to(xtemp.device) * op(xtemp) for w, op in zip(weights, self._ops))
     if temp1.shape[2] == x.shape[2]:
       #ans = torch.cat([temp1,self.bn(self.conv1(xtemp3))],dim=1)
@@ -58,7 +58,7 @@ class MixedOp(nn.Module):
 
     ans = channel_shuffle(ans,2)
     return ans
-    
+
     #return sum(w.to(x.device) * op(x) for w, op in zip(weights, self._ops))
 
 class Cell(nn.Module):
@@ -77,7 +77,7 @@ class Cell(nn.Module):
 
     self._ops = nn.ModuleList()
     self._bns = nn.ModuleList()
-    for i in range(self._steps):
+    for i in range(self._steps):  # Each intermediate note is calculated based on the nodes before itself
       for j in range(2+i):
         stride = 2 if reduction and j < 2 else 1
         op = MixedOp(C, stride)
@@ -102,14 +102,14 @@ class Network(nn.Module):
 
   def __init__(self, C, num_classes, layers, criterion, steps=4, multiplier=4, stem_multiplier=3):
     super(Network, self).__init__()
-    self._C = C
-    self._num_classes = num_classes
-    self._layers = layers
-    self._criterion = criterion
-    self._steps = steps
-    self._multiplier = multiplier
+    self._C = C  # channels
+    self._num_classes = num_classes  # 1000, nombre de classes
+    self._layers = layers  # 8, nombre de couche
+    self._criterion = criterion  # nn.CrossEntropyLoss()
+    self._steps = steps  # 4
+    self._multiplier = multiplier  # 4
 
-    C_curr = stem_multiplier*C
+    C_curr = stem_multiplier*C  # 3 * 16 = 48
     self.stem0 = nn.Sequential(
       nn.Conv2d(3, C_curr // 2, kernel_size=3, stride=2, padding=1, bias=False),
       nn.BatchNorm2d(C_curr // 2),
@@ -124,13 +124,13 @@ class Network(nn.Module):
       nn.BatchNorm2d(C_curr),
     )
 
- 
-    C_prev_prev, C_prev, C_curr = C_curr, C_curr, C
+
+    C_prev_prev, C_prev, C_curr = C_curr, C_curr, C  # 48, 48, 16
     self.cells = nn.ModuleList()
     reduction_prev = True
-    for i in range(layers):
-      if i in [layers//3, 2*layers//3]:
-        C_curr *= 2
+    for i in range(layers):  # De 1 a 7
+      if i in [layers//3, 2*layers//3]:  # Si i dans [2, 4]
+        C_curr *= 2  # 96
         reduction = True
       else:
         reduction = False
@@ -183,7 +183,7 @@ class Network(nn.Module):
 
   def _loss(self, input, target):
     logits = self(input)
-    return self._criterion(logits, target) 
+    return self._criterion(logits, target)
 
   def _initialize_alphas(self):
     k = sum(1 for i in range(self._steps) for n in range(2+i))
@@ -216,7 +216,7 @@ class Network(nn.Module):
         for j in range(n):
             W[j,:] = W[j,:]*W2[j]
         edges = sorted(range(i + 2), key=lambda x: -max(W[x][k] for k in range(len(W[x])) if k != PRIMITIVES.index('none')))[:2]
-        
+
         #edges = sorted(range(i + 2), key=lambda x: -W2[x])[:2]
         for j in edges:
           k_best = None

@@ -58,30 +58,52 @@ class Cell(nn.Module):
   def __init__(self, steps, multiplier, C_prev_prev, C_prev, C, reduction, reduction_prev):
     super(Cell, self).__init__()
     self.reduction = reduction
+    # The structure of input nodes is fixed and does not participate in the search
 
-    if reduction_prev:
+    # Decide the structure of the first input nodes
+    if reduction_prev:  # If the previous cell is a reduction
+        # The operation feature map, with C_prev_prev input channels, will be down-sampled
       self.preprocess0 = FactorizedReduce(C_prev_prev, C, affine=False)
-    else:
+    else:  # If not, we simply connect
+        # The first input_nodes is the output of cell k-2, the number of output channels of cell k-2 is C_prev_prev,
+        # so the number of input channels for operation here is C_prev_prev
       self.preprocess0 = ReLUConvBN(C_prev_prev, C, 1, 1, 0, affine=False)
-    self.preprocess1 = ReLUConvBN(C_prev, C, 1, 1, 0, affine=False)
-    self._steps = steps
+
+    # The structure of the second input nodes.
+    self.preprocess1 = ReLUConvBN(C_prev, C, 1, 1, 0, affine=False)  # The second input_nodes is the output of cell k-1
+    self._steps = steps  # steps = 4. The connection status of 4 nodes in each cell is to be determined
     self._multiplier = multiplier
 
-    self._ops = nn.ModuleList()
+    self._ops = nn.ModuleList()  # Build the module's list of operations
     self._bns = nn.ModuleList()
-    for i in range(self._steps):
-      for j in range(2+i):
-        stride = 2 if reduction and j < 2 else 1
-        op = MixedOp(C, stride)
-        self._ops.append(op)
 
-  def forward(self, s0, s1, weights,weights2):
+    for i in range(self._steps):  # Go through 4 intermediate nodes to build a mixed operation
+      for j in range(2+i):   # For the i-th node, it has j predecessor nodes
+        # (the input of each node is composed of the output of the first two cells
+        # and the node in front of the current cell)
+        stride = 2 if reduction and j < 2 else 1
+        op = MixedOp(C, stride)  # op is to build a mix between two nodes
+        self._ops.append(op)  # Add the mixed operation of all edges to ops. Len of the list is 2+3+4+5=14[[],[],...,[]]
+
+  # Cell in the calculation process, automatically called during forward propagation
+  def forward(self, s0, s1, weights, weights2):
     s0 = self.preprocess0(s0)
     s1 = self.preprocess1(s1)
 
-    states = [s0, s1]
+    states = [s0, s1]  # Predecessor node of current node
     offset = 0
+    # Traverse each intermediate nodes and get the output of each node
     for i in range(self._steps):
+      # === DARTS ===
+      # s is the output of the current node i.
+      # Find the operation corresponding to i in ops,
+      # and then do the corresponding operation on all the predecessor nodes of i (called the forward of MixedOp),
+      # and then add the results
+      # s = sum(self._ops[offset+j](h, weights[offset+j]) for j, h in enumerate(states))
+      # =============
+
+      # s is the output of the current node i.
+      #
       s = sum(weights2[offset+j]*self._ops[offset+j](h, weights[offset+j]) for j, h in enumerate(states))
       offset += len(states)
       states.append(s)
