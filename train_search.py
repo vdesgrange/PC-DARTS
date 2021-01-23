@@ -124,26 +124,32 @@ def main():
     train_acc, train_obj = train(train_queue, valid_queue, model, architect, criterion, optimizer, lr,epoch)
     logging.info('train_acc %f', train_acc)
 
+    # validation : check at every epoch due to memory issue
+    valid_acc, valid_obj = infer(valid_queue, model, criterion)
+    logging.info('valid_acc %f', valid_acc)
+
     # validation
-    if args.epochs-epoch<=1:
-      valid_acc, valid_obj = infer(valid_queue, model, criterion)
-      logging.info('valid_acc %f', valid_acc)
+    # if args.epochs-epoch<=1:
+    #   valid_acc, valid_obj = infer(valid_queue, model, criterion)
+    #   logging.info('valid_acc %f', valid_acc)
 
     utils.save(model, os.path.join(args.save, 'weights.pt'))
 
 
 def train(train_queue, valid_queue, model, architect, criterion, optimizer, lr,epoch):
-  objs = utils.AvgrageMeter()
-  top1 = utils.AvgrageMeter()
-  top5 = utils.AvgrageMeter()
+  objs = utils.AvgrageMeter()  # Used to save the value of loss
+  top1 = utils.AvgrageMeter()  # The probability that the first 1 prediction is correct
+  top5 = utils.AvgrageMeter()  # The probability that the top 5 predictions are correct
 
-  for step, (input, target) in enumerate(train_queue):
+  for step, (input, target) in enumerate(train_queue):  # Each step takes out a batch, batch size is 64 (256 data pairs)
     model.train()
     n = input.size(0)
     input = Variable(input, requires_grad=False).cuda()
     target = Variable(target, requires_grad=False).cuda(async=True)
 
     # get a random minibatch from the search queue with replacement
+    # A batch used for schema parameter update.
+    # Use iter(dataloader) to return an iterator, which can then be accessed using next;
     input_search, target_search = next(iter(valid_queue))
     #try:
     #  input_search, target_search = next(valid_queue_iter)
@@ -153,9 +159,12 @@ def train(train_queue, valid_queue, model, architect, criterion, optimizer, lr,e
     input_search = Variable(input_search, requires_grad=False).cuda()
     target_search = Variable(target_search, requires_grad=False).cuda(async=True)
 
+    # Epoch >= 15 : because ...
     if epoch>=15:
+      # Update α, corresponding to the first step of the pseudo code, which is to use formula 6
       architect.step(input, target, input_search, target_search, lr, optimizer, unrolled=args.unrolled)
 
+    # Update w, corresponding to the second step of the pseudo code
     optimizer.zero_grad()
     logits = model(input)
     loss = criterion(logits, target)

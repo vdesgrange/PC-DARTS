@@ -27,29 +27,29 @@ class MixedOp(nn.Module):
   def __init__(self, C, stride):
     super(MixedOp, self).__init__()
     self._ops = nn.ModuleList()
-    self.mp = nn.MaxPool2d(2,2)
-    self.k = 4
-    for primitive in PRIMITIVES:
-      op = OPS[primitive](C //self.k, stride, False)
-      if 'pool' in primitive:
+    self.mp = nn.MaxPool2d(2,2)  # Note: this MaxPool operation wasn't mention in the PC-Darts paper.
+    self.k = 4  # Proportion of selected channels is 1/k
+    for primitive in PRIMITIVES:  # There are 8 operations in PRIMITIVES for PC-Darts.
+      op = OPS[primitive](C //self.k, stride, False)  # Get operation from name. Nb of channels: floor division C by k
+      if 'pool' in primitive:  # Add a batch normalization to the pooling operation
         op = nn.Sequential(op, nn.BatchNorm2d(C //self.k, affine=False))
-      self._ops.append(op)
+      self._ops.append(op)  # Put these ops in the pre-defined module list
 
 
   def forward(self, x, weights):
-    #channel proportion k=4  
+    # channel proportion k=4
     dim_2 = x.shape[1]
     xtemp = x[ : , :  dim_2//self.k, :, :]
     xtemp2 = x[ : ,  dim_2//self.k:, :, :]
     temp1 = sum(w * op(xtemp) for w, op in zip(weights, self._ops))
-    #reduction cell needs pooling before concat
+    # reduction cell needs pooling before concat
     if temp1.shape[2] == x.shape[2]:
       ans = torch.cat([temp1,xtemp2],dim=1)
     else:
       ans = torch.cat([temp1,self.mp(xtemp2)], dim=1)
     ans = channel_shuffle(ans,self.k)
-    #ans = torch.cat([ans[ : ,  dim_2//4:, :, :],ans[ : , :  dim_2//4, :, :]],dim=1)
-    #except channe shuffle, channel shift also works
+    # ans = torch.cat([ans[ : ,  dim_2//4:, :, :],ans[ : , :  dim_2//4, :, :]],dim=1)
+    # except channe shuffle, channel shift also works
     return ans
 
 
@@ -87,27 +87,33 @@ class Cell(nn.Module):
 
   # Cell in the calculation process, automatically called during forward propagation
   def forward(self, s0, s1, weights, weights2):
+    """
+    Implement the equation (1) from Darts paper
+    x_j = \sum_{i<j} o^{(i,j)}(x^{i})
+    :param s0: Input node from C_prev_prev
+    :param s1: Input node from C_prev
+    :param weights: Used by operation
+    :return:
+    """
     s0 = self.preprocess0(s0)
     s1 = self.preprocess1(s1)
 
     states = [s0, s1]  # Predecessor node of current node
     offset = 0
-    # Traverse each intermediate nodes and get the output of each node
-    for i in range(self._steps):
-      # === DARTS ===
-      # s is the output of the current node i.
-      # Find the operation corresponding to i in ops,
-      # and then do the corresponding operation on all the predecessor nodes of i (called the forward of MixedOp),
-      # and then add the results
-      # s = sum(self._ops[offset+j](h, weights[offset+j]) for j, h in enumerate(states))
-      # =============
+    # Loop over all 4 intermediates nodes
+    for i in range(self._steps): # i and j are reversed in comparison to the math equation in pc-darts paper
+        # s is the output of the current node i, find the operation corresponding to i in ops,
+        # and then do the corresponding operation on all the predecessor nodes of i (called the forward of MixedOp),
+        # and then add the results
 
-      # s is the output of the current node i.
-      #
+        # Difference with darts : we use an additional weights2 attribute in front of the operation.
       s = sum(weights2[offset+j]*self._ops[offset+j](h, weights[offset+j]) for j, h in enumerate(states))
-      offset += len(states)
-      states.append(s)
+      offset += len(states)  # We handle a 1D (offset + j) array instead of a 2D (j, i) array.
+      states.append(s)  # Use the output of the current node i as the input of the next node.
+    # states is [s0,s1,b1,b2,b3,b4] b1,b2,b3,b4 are the output of the four intermediate outputs
 
+    # Concat the intermediate output as the output of the current cell
+    # dim=1 refers to the channel dimension concat, so the number of output channels becomes 4 times the original
     return torch.cat(states[-self._multiplier:], dim=1)
 
 
