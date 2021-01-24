@@ -161,7 +161,7 @@ def train(train_queue, valid_queue, model, architect, criterion, optimizer, lr,e
 
     # Epoch >= 15 : because ...
     if epoch>=15:
-      # Update α, corresponding to the first step of the pseudo code, which is to use formula 6
+      # Update alpha, corresponding to the first step of the pseudo code, which is to use formula 6
       architect.step(input, target, input_search, target_search, lr, optimizer, unrolled=args.unrolled)
 
     # Update w, corresponding to the second step of the pseudo code
