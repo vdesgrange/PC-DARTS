@@ -142,7 +142,7 @@ def train(train_queue, valid_queue, model, architect, criterion, optimizer, lr,e
   top5 = utils.AvgrageMeter()  # The probability that the top 5 predictions are correct
 
   for step, (input, target) in enumerate(train_queue):  # Each step takes out a batch, batch size is 64 (256 data pairs)
-    model.train()
+    model.train()  # Turn training mode on.
     n = input.size(0)
     input = Variable(input, requires_grad=False).cuda()
     target = Variable(target, requires_grad=False).cuda(async=True)
@@ -185,10 +185,10 @@ def train(train_queue, valid_queue, model, architect, criterion, optimizer, lr,e
 
 
 def infer(valid_queue, model, criterion):
-  objs = utils.AvgrageMeter()
-  top1 = utils.AvgrageMeter()
-  top5 = utils.AvgrageMeter()
-  model.eval()
+  objs = utils.AvgrageMeter()  # Used to save the value of loss
+  top1 = utils.AvgrageMeter()  # The probability that the first 1 prediction is correct
+  top5 = utils.AvgrageMeter()  # The probability that the top 5 predictions are correct
+  model.eval()  # Turn evaluation/validation mode on.
 
   for step, (input, target) in enumerate(valid_queue):
     #input = input.cuda()
