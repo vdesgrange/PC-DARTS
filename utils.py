@@ -2,6 +2,7 @@ import os
 import numpy as np
 import torch
 import shutil
+import torch.nn as nn
 import torchvision.transforms as transforms
 from torch.autograd import Variable
 
@@ -96,8 +97,8 @@ def save(model, model_path):
 
 
 def load(model, model_path):
-  model.load_state_dict(torch.load(model_path))
-
+    # model.load_state_dict(torch.load(model_path))
+    model.load_state_dict(torch.load(model_path, map_location=lambda storage, loc: storage), strict=False)
 
 def drop_path(x, drop_prob):
   if drop_prob > 0.:
